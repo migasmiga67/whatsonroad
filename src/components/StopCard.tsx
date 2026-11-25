@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CATEGORY_ICON, fmtDuration, hhmm } from "@/lib/timeline";
 import { CATEGORY_LABEL, type Candidate, type Pick, type StopPlan } from "@/lib/types";
 
@@ -10,6 +11,27 @@ function Meta({ c }: { c: Candidate }) {
       <span>· {c.distKm < 0.3 ? "przy trasie" : `${c.distKm} km od trasy`}</span>
       <span>· +{c.detourMin} min jazdy</span>
       {c.side === "left" && <span className="text-red-600">· po drugiej stronie jezdni</span>}
+    </div>
+  );
+}
+
+/** Zdjęcie z Wikipedii albo ikona kategorii (także gdy zdjęcie się nie wczyta). */
+function Thumb({ c }: { c: Candidate }) {
+  const [failed, setFailed] = useState(false);
+  if (c.imageUrl && !failed)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={c.imageUrl}
+        alt=""
+        className="h-20 w-24 flex-none rounded-lg object-cover"
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    );
+  return (
+    <div className="flex h-20 w-24 flex-none items-center justify-center rounded-lg bg-slate-100 text-3xl">
+      {CATEGORY_ICON[c.category]}
     </div>
   );
 }
@@ -82,7 +104,13 @@ export default function StopCard({
         )}
       </header>
 
-      {candidates.length === 0 && (
+      {plan.error && (
+        <p className="p-4 text-sm text-red-700">
+          Nie udało się wyszukać miejsc: {plan.error} Spróbuj zaplanować trasę ponownie za chwilę.
+        </p>
+      )}
+
+      {candidates.length === 0 && !plan.error && (
         <p className="p-4 text-sm text-slate-500">
           Brak ciekawych miejsc w tym rejonie. Spróbuj zwiększyć maksymalne zboczenie z trasy.
         </p>
@@ -91,19 +119,7 @@ export default function StopCard({
       {chosen && pick && (
         <div className="space-y-2 p-4">
           <div className="flex gap-3">
-            {chosen.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={chosen.imageUrl}
-                alt=""
-                className="h-20 w-24 flex-none rounded-lg object-cover"
-                loading="lazy"
-              />
-            ) : (
-              <div className="flex h-20 w-24 flex-none items-center justify-center rounded-lg bg-slate-100 text-3xl">
-                {CATEGORY_ICON[chosen.category]}
-              </div>
-            )}
+            <Thumb c={chosen} />
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2">
                 <h4 className="font-semibold leading-tight">{chosen.name}</h4>

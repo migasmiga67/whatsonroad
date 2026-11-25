@@ -113,6 +113,8 @@ export type StopPlan = {
   candidates: Candidate[];
   main: Pick | null;
   alternatives: Pick[];
+  /** błąd wyszukiwania kandydatów dla tego postoju (np. API nie odpowiada) */
+  error?: string;
 };
 
 export type RankResult = {

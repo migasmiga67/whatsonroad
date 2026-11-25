@@ -155,6 +155,7 @@ export default function Home() {
           });
         } catch (err) {
           if (!alive()) return;
+          collected[slot.index] = { ...collected[slot.index], error: (err as Error).message };
           updateStep(slot.index + 1, { label: `Postój ${slot.index + 1}`, status: "error", detail: (err as Error).message });
         }
         setPlans([...collected]);

@@ -4,7 +4,10 @@ Podajesz start i cel podróży samochodem (np. **Kraków → Gdańsk**), a aplik
 ciekawe postoje mniej więcej co 2 godziny jazdy: zamki, punkty widokowe, jeziora, muzea,
 kuchnię regionalną oraz – **priorytetowo – MOP-y** (Miejsca Obsługi Podróżnych).
 
-![Mapa z trasą i postojami](docs/screenshot.png)
+![Kraków → Gdańsk: oś czasu, karta postoju i mapa](docs/screenshot.png)
+
+<sub>Zrzut z środowiska testowego bez dostępu do Overpass i Claude API – dlatego widać tylko
+miejsca z Wikipedii i ranking heurystyczny (bez MOP-ów).</sub>
 
 ## Funkcje
 
@@ -131,13 +134,19 @@ w granicach słów), walidację odpowiedzi Claude i oś czasu z objazdami.
 
 ### Wyniki testów na trasach
 
-| Trasa | Dystans / czas jazdy | Postoje (co 2 h) |
-| --- | --- | --- |
-| Kraków → Gdańsk | 608 km, 5 h 55 min | po 2 h (okolice Piotrkowa Tryb.) i 4 h (okolice Torunia) |
-| Warszawa → Zakopane | 412 km, 5 h 07 min | po 2 h (okolice Szydłowca/Kielc) i 4 h (okolice Krakowa) |
+Testy w przeglądarce (Playwright) na prawdziwych API, postój co 2 h, zboczenie 10 km,
+zainteresowania: zabytki + punkty widokowe:
 
-Przykładowe propozycje z Wikipedii dla Warszawa → Zakopane, postój 1: Zamek w Szydłowcu,
-Muzeum Ludowych Instrumentów Muzycznych, renesansowy ratusz.
+| Trasa | Dystans / czas jazdy | Propozycje (ranking heurystyczny, kandydaci z Wikipedii) |
+| --- | --- | --- |
+| Kraków → Gdańsk | 608 km, 5 h 55 min | 1: Zamek Bykowskich w Bykach (Piotrków Tryb.), alt. Dwór w Kościelcu · 2: Pałac w Wieńcu (okolice Włocławka) · przyjazd +2 h 13 min postojów |
+| Warszawa → Zakopane | 412 km, 5 h 07 min | 1: Zamek w Szydłowcu, alt. Muzeum Ludowych Instrumentów Muzycznych, renesansowy ratusz · 2: okolice Krakowa |
+
+Środowisko testowe nie miało dostępu do Overpass (serwery zrywały połączenia), Claude API
+ani ważnego klucza HeiGIT – te ścieżki pokrywają testy jednostkowe z danymi testowymi
+(m.in. MOP po właściwej/przeciwnej stronie, deduplikacja, walidacja odpowiedzi Claude),
+a trasy liczył fallback OSRM/Nominatim. Na zwykłym komputerze z kluczami w `.env.local`
+działa pełna ścieżka: ORS → Overpass (z MOP-ami) → ranking Claude.
 
 ## Ograniczenia
 

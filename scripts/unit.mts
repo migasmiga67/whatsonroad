@@ -3,7 +3,7 @@
  *   npm test
  */
 import assert from "node:assert/strict";
-import { __test as C, scoreCandidate } from "../src/lib/candidates";
+import { __test as C, findCandidates, scoreCandidate } from "../src/lib/candidates";
 import { __test as R, firstSentence, heuristicRank } from "../src/lib/rank";
 import { splitRoute } from "../src/lib/split";
 import { buildTimeline, googleMapsUrl } from "../src/lib/timeline";
@@ -152,6 +152,64 @@ test("link Google Maps z punktami pośrednimi", () => {
 test("pierwsze zdanie nie tnie na skrótach", () => {
   assert.equal(firstSentence("Fort XIV Twierdzy Toruń im. Józefa Bema – fort z XIX w. Leży nad Wisłą."), "Fort XIV Twierdzy Toruń im. Józefa Bema – fort z XIX w. Leży nad Wisłą.");
   assert.equal(firstSentence("Kościół św. Anny – zabytkowy kościół. Drugie zdanie."), "Kościół św. Anny – zabytkowy kościół.");
+});
+
+// ---------- findCandidates na danych testowych (bez sieci) ----------
+const slot0 = splitRoute(route, 2)[0]; // 2 h → lat ≈ 50.333
+const osm = [
+  // ten sam MOP jako punkt i obszar (deduplikacja), po prawej (wschód) stronie
+  { type: "node", id: 1, lat: 50.34, lon: 19.003, tags: { highway: "services", name: "MOP Testowo", toilets: "yes" } },
+  { type: "way", id: 2, center: { lat: 50.341, lon: 19.0035 }, tags: { highway: "services", name: "MOP Testowo", amenity: "fuel" } },
+  // MOP po lewej stronie jezdni
+  { type: "node", id: 3, lat: 50.35, lon: 18.997, tags: { highway: "rest_area", name: "MOP Lewy" } },
+  // zamek z tagiem wikipedia → opis z Wikipedii
+  { type: "way", id: 4, center: { lat: 50.33, lon: 19.05 }, tags: { historic: "castle", name: "Zamek Testowy", wikipedia: "pl:Zamek Testowy" } },
+  // za daleko od trasy (> 10 km)
+  { type: "node", id: 5, lat: 50.33, lon: 19.3, tags: { tourism: "museum", name: "Muzeum Daleko" } },
+  // poza oknem czasowym postoju
+  { type: "node", id: 6, lat: 50.9, lon: 19.01, tags: { tourism: "viewpoint", name: "Widok Daleko" } },
+] as const;
+const page = (pageid: number, title: string, lat: number, lon: number, extract: string) => ({ pageid, title, lat, lon, extract, url: `https://pl.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}` });
+
+const found = await findCandidates(route, slot0, { maxDetourKm: 10, interests: ["monuments"], preferMop: true }, {
+  overpass: async () => osm as never,
+  wikiGeo: async () => [
+    page(10, "Testowo", 50.33, 19.02, "Testowo – wieś w Polsce."),
+    page(11, "Jezioro Testowe", 50.32, 19.04, "Jezioro Testowe – jezioro rynnowe."),
+  ],
+  wikiTitles: async (titles) => titles.map((t, i) => ({ ...page(100 + i, t, 50.33, 19.05, `${t} – gotycki zamek z XIV wieku.`), thumbnail: "https://example/img.jpg" })),
+});
+
+test("findCandidates: deduplikacja MOP, strona jezdni, filtry odległości i okna, Wikipedia", () => {
+  const byName = (n: string) => found.candidates.find((c) => c.name === n);
+  assert.equal(found.warnings.length, 0);
+  assert.equal(found.candidates.filter((c) => c.name === "MOP Testowo").length, 1, "jeden MOP po deduplikacji");
+  const mop = byName("MOP Testowo")!;
+  assert.equal(mop.side, "right");
+  assert.ok(mop.facts!.includes("stacja paliw") && mop.facts!.includes("toalety"), "udogodnienia scalone");
+  assert.equal(found.candidates[0].id, mop.id, "MOP na pierwszym miejscu przy priorytecie MOP");
+  assert.equal(byName("MOP Lewy"), undefined, "MOP po lewej nie trafia do listy");
+  const castle = byName("Zamek Testowy")!;
+  assert.equal(castle.source, "osm+wikipedia");
+  assert.match(castle.description!, /XIV wieku/);
+  assert.ok(castle.imageUrl);
+  assert.ok(byName("Jezioro Testowe"), "artykuł z GeoSearch jako nowy kandydat");
+  assert.equal(byName("Testowo"), undefined, "wieś odrzucona");
+  assert.equal(byName("Muzeum Daleko"), undefined, "za daleko od trasy");
+  assert.equal(byName("Widok Daleko"), undefined, "poza oknem postoju");
+});
+
+const degraded = await findCandidates(route, slot0, { maxDetourKm: 10, interests: [], preferMop: true }, {
+  overpass: async () => {
+    throw new Error("Overpass API nie odpowiada.");
+  },
+  wikiGeo: async () => [page(11, "Jezioro Testowe", 50.32, 19.04, "Jezioro Testowe – jezioro rynnowe.")],
+  wikiTitles: async () => [],
+});
+
+test("findCandidates: awaria Overpass → kandydaci z Wikipedii + ostrzeżenie", () => {
+  assert.equal(degraded.candidates.length, 1);
+  assert.match(degraded.warnings[0], /Overpass API nie odpowiada\. Pokazuję tylko miejsca z Wikipedii/);
 });
 
 console.log(`\n${n} testów OK`);

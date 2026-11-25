@@ -169,10 +169,14 @@ function detourMinutes(cat: Category, distKm: number, side: "left" | "right") {
   return Math.round(5 + ((2 * distKm * 1.3) / 45) * 60);
 }
 
+/** Źródła danych – podmienialne w testach. */
+const defaultSources = { overpass: overpassAround, wikiGeo: wikiGeoSearch, wikiTitles: wikiByTitles };
+
 export async function findCandidates(
   route: RouteData,
   slot: StopSlot,
   opts: { maxDetourKm: number; interests: Interest[]; preferMop: boolean },
+  src: typeof defaultSources = defaultSources,
 ): Promise<{ candidates: Candidate[]; warnings: string[] }> {
   const warnings: string[] = [];
   const radiusM = Math.round(opts.maxDetourKm * 1000);
@@ -181,8 +185,8 @@ export async function findCandidates(
   // Wikipedia GeoSearch: max 10 km promienia, więc próbkujemy kilka punktów okna.
   const wikiPoints = [0, 0.25, 0.5, 0.75, 1].map((f) => line[Math.min(line.length - 1, Math.round(f * (line.length - 1)))]);
   const [osmRes, ...wikiRes] = await Promise.allSettled([
-    overpassAround(line, radiusM),
-    ...wikiPoints.map(([lat, lon]) => wikiGeoSearch(lat, lon, radiusM)),
+    src.overpass(line, radiusM),
+    ...wikiPoints.map(([lat, lon]) => src.wikiGeo(lat, lon, radiusM)),
   ]);
   const osm = osmRes.status === "fulfilled" ? (osmRes.value as OsmElement[]) : [];
   const wikiLists = wikiRes.map((r) => (r.status === "fulfilled" ? (r.value as WikiPage[]) : []));
@@ -245,7 +249,7 @@ export async function findCandidates(
 
   // Opisy z Wikipedii dla obiektów OSM z tagiem wikipedia=*
   if (wikiTitleFor.size) {
-    const pages = await wikiByTitles([...wikiTitleFor.keys()]).catch(() => [] as WikiPage[]);
+    const pages = await src.wikiTitles([...wikiTitleFor.keys()]).catch(() => [] as WikiPage[]);
     for (const p of pages) {
       const c = byId.get(wikiTitleFor.get(p.title) ?? "");
       if (c) attachWiki(c, p);
@@ -293,7 +297,7 @@ export async function findCandidates(
   // Dociągnij opisy/zdjęcia dla kandydatów z Wikipedii, którym GeoSearch ich nie zwrócił (limit 20 wyciągów).
   const missing = [...byId.values()].filter((c) => c.source === "wikipedia" && !c.description);
   if (missing.length) {
-    const pages = await wikiByTitles(missing.map((c) => decodeURIComponent(c.wikiUrl!.split("/wiki/")[1]).replace(/_/g, " "))).catch(
+    const pages = await src.wikiTitles(missing.map((c) => decodeURIComponent(c.wikiUrl!.split("/wiki/")[1]).replace(/_/g, " "))).catch(
       () => [] as WikiPage[],
     );
     for (const c of missing) {

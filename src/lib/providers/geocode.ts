@@ -1,4 +1,3 @@
-import "server-only";
 import { cached, DAY } from "../cache";
 import { fetchJson, ServiceError } from "../http";
 import type { Place } from "../types";

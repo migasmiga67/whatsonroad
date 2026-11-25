@@ -9,6 +9,26 @@ kuchnię regionalną oraz – **priorytetowo – MOP-y** (Miejsca Obsługi Podr�
 <sub>Zrzut z środowiska testowego bez dostępu do Overpass i Claude API – dlatego widać tylko
 miejsca z Wikipedii i ranking heurystyczny (bez MOP-ów).</sub>
 
+## Wersja online
+
+**👉 https://migasmiga67.github.io/whatsonroad/**
+
+Wersja na GitHub Pages działa w całości w przeglądarce: trasę liczy OSRM, geokodowanie robi
+Nominatim, miejsca dostarczają Overpass i Wikipedia, a cache trzyma `localStorage`. Ranking AI
+jest opcjonalny – w panelu „🤖 Ranking AI (Claude)” można wkleić własny klucz Claude API
+(zapisywany tylko w tej przeglądarce i wysyłany wyłącznie do api.anthropic.com). Bez klucza
+działa ranking heurystyczny.
+
+Wersja uruchomiona z serwerem (`npm run dev` / `npm start`, np. na Vercel) trzyma klucze
+w `.env.local` po stronie serwera i może używać OpenRouteService.
+
+### Publikacja na GitHub Pages
+
+Workflow `.github/workflows/pages.yml` przy każdym pushu na `main` uruchamia testy, buduje
+statyczną wersję (`npm run build:static` → katalog `out/`) i publikuje ją. Jednorazowo trzeba
+w repozytorium ustawić **Settings → Pages → Build and deployment → Source: „GitHub Actions”**
+(zamiast „Deploy from a branch”, które pokazuje tylko README).
+
 ## Funkcje
 
 - **Formularz**: start, cel, godzina wyjazdu, odstęp między postojami (suwak 1–3 h, domyślnie 2 h),
@@ -125,7 +145,7 @@ planu – pokazywane są miejsca z Wikipedii z ostrzeżeniem; brak Claude → ra
 npm test                                   # testy logiki (bez sieci)
 npm run smoke -- "Kraków" "Gdańsk"         # cały pipeline na prawdziwych API, wynik w konsoli
 npm run smoke -- "Warszawa" "Zakopane" "nature,food"
-npm run typecheck && npm run lint && npm run build
+npm run typecheck && npm run lint && npm run build && npm run build:static
 ```
 
 Testy jednostkowe (`scripts/unit.mts`) sprawdzają m.in. podział trasy, stronę jezdni MOP-ów

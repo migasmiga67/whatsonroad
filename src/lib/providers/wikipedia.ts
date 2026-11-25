@@ -1,4 +1,3 @@
-import "server-only";
 import { cached, DAY } from "../cache";
 import { fetchJson } from "../http";
 
@@ -39,6 +38,7 @@ type QueryResponse = {
 const COMMON = {
   action: "query",
   format: "json",
+  origin: "*", // CORS – pozwala wołać API wprost z przeglądarki (wersja na GitHub Pages)
   prop: "extracts|pageimages|coordinates|description|info",
   exintro: "1",
   explaintext: "1",

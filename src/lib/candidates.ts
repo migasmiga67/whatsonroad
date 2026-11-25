@@ -1,4 +1,3 @@
-import "server-only";
 import { haversineM, indexAt, nearestOnLine } from "./geo";
 import { overpassAround, type OsmElement } from "./providers/overpass";
 import { wikiByTitles, wikiGeoSearch, type WikiPage } from "./providers/wikipedia";

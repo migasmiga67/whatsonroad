@@ -1,5 +1,3 @@
-import "server-only";
-
 /**
  * Konfiguracja OpenRouteService.
  * Uwaga: od 2026-11-24 stary host api.openrouteservice.org zwraca 410 – API działa pod api.heigit.org.

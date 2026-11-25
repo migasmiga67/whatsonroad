@@ -1,4 +1,3 @@
-import "server-only";
 import { cached, DAY } from "../cache";
 import { haversineM, simplifyIndices } from "../geo";
 import { fetchJson, ServiceError } from "../http";

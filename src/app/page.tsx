@@ -5,17 +5,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PlanForm from "@/components/PlanForm";
 import StopCard from "@/components/StopCard";
 import Timeline from "@/components/Timeline";
+import { planner, STATIC_MODE } from "@/lib/planner";
 import { buildTimeline, defaultVisit, fmtDuration, googleMapsUrl, hhmm, type ChosenStop } from "@/lib/timeline";
 import {
   CATEGORY_LABEL,
-  type ApiErrorBody,
   type Candidate,
   type Pick,
   type PlanRequest,
   type RankResult,
   type RouteData,
   type StopPlan,
-  type StopSlot,
 } from "@/lib/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
@@ -27,24 +26,13 @@ type StepStatus = "pending" | "active" | "done" | "warn" | "error";
 type Step = { label: string; status: StepStatus; detail?: string };
 
 const STORAGE_KEY = "po-drodze:form";
+const CLAUDE_KEY_STORAGE = "po-drodze:claude-key";
 
 function nextQuarter(): string {
   const d = new Date(Date.now() + 15 * 60_000);
   d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-async function postJson<T>(url: string, body: unknown): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  } catch {
-    throw new Error("Brak połączenia z serwerem aplikacji.");
-  }
-  const data = (await res.json().catch(() => ({}))) as T & Partial<ApiErrorBody>;
-  if (!res.ok) throw new Error(data.error || `Błąd serwera (HTTP ${res.status}).`);
-  return data;
 }
 
 function fallbackWhy(c: Candidate): string {
@@ -72,6 +60,7 @@ export default function Home() {
   const [choice, setChoice] = useState<Record<number, string | null>>({});
   const [visitOverride, setVisitOverride] = useState<Record<string, number>>({});
   const [departureUsed, setDepartureUsed] = useState<string>("");
+  const [claudeKey, setClaudeKey] = useState("");
   const runId = useRef(0);
 
   // Domyślna godzina wyjazdu i zapamiętany formularz – tylko po stronie klienta.
@@ -81,6 +70,11 @@ export default function Home() {
       saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     } catch {}
     setForm((f) => ({ ...f, ...saved, departure: nextQuarter() }));
+    if (STATIC_MODE) {
+      try {
+        setClaudeKey(localStorage.getItem(CLAUDE_KEY_STORAGE) || "");
+      } catch {}
+    }
   }, []);
 
   const updateStep = (i: number, patch: Partial<Step>) =>
@@ -111,11 +105,7 @@ export default function Home() {
 
     try {
       // 1. Trasa + podział na odcinki
-      const r = await postJson<{ route: RouteData; slots: StopSlot[] }>("/api/route", {
-        from: form.from,
-        to: form.to,
-        intervalHours: form.intervalHours,
-      });
+      const r = await planner.route(form.from, form.to, form.intervalHours);
       if (!alive()) return;
       setRoute(r.route);
       const providerName = r.route.provider === "openrouteservice" ? "OpenRouteService" : "OSRM";
@@ -139,12 +129,7 @@ export default function Home() {
       for (const slot of r.slots) {
         updateStep(slot.index + 1, { status: "active" });
         try {
-          const c = await postJson<{ candidates: Candidate[]; warnings: string[] }>("/api/candidates", {
-            from: r.route.from,
-            to: r.route.to,
-            slotIndex: slot.index,
-            ...opts,
-          });
+          const c = await planner.candidates(r.route, slot.index, opts);
           if (!alive()) return;
           collected[slot.index] = { ...collected[slot.index], candidates: c.candidates };
           const mops = c.candidates.filter((x) => x.category === "mop").length;
@@ -164,11 +149,10 @@ export default function Home() {
       // 3. Ranking AI
       const rankIdx = r.slots.length + 1;
       updateStep(rankIdx, { status: "active", label: "Ranking AI: wybieram najlepsze postoje" });
-      const ranked = await postJson<RankResult>("/api/rank", {
-        ...opts,
-        departure: form.departure,
-        stops: collected.map(({ slot, candidates }) => ({ slot, candidates })),
-      });
+      const ranked = await planner.rank(
+        collected.map(({ slot, candidates }) => ({ slot, candidates })),
+        { ...opts, departure: form.departure, claudeApiKey: claudeKey || undefined },
+      );
       if (!alive()) return;
       const final = collected.map((p) => {
         const rr = ranked.stops.find((s) => s.index === p.slot.index);
@@ -189,7 +173,15 @@ export default function Home() {
     } finally {
       if (alive()) setBusy(false);
     }
-  }, [form]);
+  }, [form, claudeKey]);
+
+  const saveClaudeKey = (k: string) => {
+    setClaudeKey(k);
+    try {
+      if (k) localStorage.setItem(CLAUDE_KEY_STORAGE, k);
+      else localStorage.removeItem(CLAUDE_KEY_STORAGE);
+    } catch {}
+  };
 
   const pickFor = useCallback(
     (plan: StopPlan) =>
@@ -239,6 +231,26 @@ export default function Home() {
 
         <section className="px-5 pb-5">
           <PlanForm value={form} onChange={setForm} onSubmit={run} busy={busy} />
+          {STATIC_MODE && (
+            <details className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-sm">
+              <summary className="cursor-pointer font-medium">
+                🤖 Ranking AI (Claude) {claudeKey ? <span className="text-emerald-700">– włączony</span> : <span className="text-slate-500">– opcjonalnie</span>}
+              </summary>
+              <p className="mt-2 text-xs text-slate-600">
+                Bez klucza postoje wybiera prosty algorytm. Z kluczem Claude API wybór i opisy „dlaczego warto” robi AI.
+                Klucz jest zapisywany tylko w tej przeglądarce i wysyłany wyłącznie do api.anthropic.com. Używaj go tylko na
+                własnym urządzeniu.
+              </p>
+              <input
+                type="password"
+                autoComplete="off"
+                className="input mt-2 font-mono"
+                placeholder="sk-ant-…"
+                value={claudeKey}
+                onChange={(e) => saveClaudeKey(e.target.value.trim())}
+              />
+            </details>
+          )}
         </section>
 
         {steps.length > 0 && (

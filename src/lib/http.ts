@@ -1,5 +1,3 @@
-import "server-only";
-
 /** Błąd zewnętrznego API z czytelnym (polskim) komunikatem dla użytkownika. */
 export class ServiceError extends Error {
   constructor(
@@ -73,7 +71,12 @@ export async function fetchJson<T>(service: string, url: string, opts: FetchOpts
   const { timeoutMs = 20000, retries = 1, headers, queue, ...rest } = opts;
   const init: RequestInit = {
     ...rest,
-    headers: { "User-Agent": USER_AGENT, Accept: "application/json", ...(headers as Record<string, string>) },
+    headers: {
+      // W przeglądarce User-Agent ustawia sama przeglądarka (własny nagłówek wymusiłby preflight CORS).
+      ...(typeof window === "undefined" ? { "User-Agent": USER_AGENT } : {}),
+      Accept: "application/json",
+      ...(headers as Record<string, string>),
+    },
   };
   for (let attempt = 0; ; attempt++) {
     try {

@@ -1,6 +1,3 @@
-import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { cached, DAY } from "./cache";
 import { defaultVisit } from "./timeline";
@@ -143,20 +140,43 @@ function validate(input: RankInput, parsed: z.infer<typeof RankSchema>): RankRes
   };
 }
 
-export async function rankStops(input: RankInput): Promise<RankResult> {
+export type RankOptions = {
+  /**
+   * Klucz podany przez użytkownika w przeglądarce (wersja statyczna na GitHub Pages).
+   * Zapytanie idzie wtedy wprost z przeglądarki do Claude API; klucz nie opuszcza urządzenia.
+   */
+  browserApiKey?: string;
+};
+
+export async function rankStops(input: RankInput, opts: RankOptions = {}): Promise<RankResult> {
   const withCandidates = input.stops.filter((s) => s.candidates.length > 0);
   if (!withCandidates.length) return heuristicRank(input);
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    return { ...heuristicRank(input), note: "Brak ANTHROPIC_API_KEY – użyto rankingu heurystycznego." };
+  const inBrowser = typeof window !== "undefined";
+  const hasKey = inBrowser ? !!opts.browserApiKey : !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  if (!hasKey) {
+    return {
+      ...heuristicRank(input),
+      note: inBrowser
+        ? "Ranking heurystyczny – podaj klucz Claude API w ustawieniach, aby wybierał AI."
+        : "Brak ANTHROPIC_API_KEY – użyto rankingu heurystycznego.",
+    };
   }
 
   const prompt = buildPrompt({ ...input, stops: withCandidates });
   const system = SYSTEM + (input.preferMop ? MOP_RULE : "");
   const departureHour = input.departure.slice(11, 13); // pora dnia wpływa na wybór – reszta daty nie
 
+  // SDK ładujemy dopiero, gdy jest potrzebne (mniejsza strona bez klucza).
+  const [{ default: Anthropic }, { betaZodOutputFormat }] = await Promise.all([
+    import("@anthropic-ai/sdk"),
+    import("@anthropic-ai/sdk/helpers/beta/zod"),
+  ]);
+
   try {
     const parsed = await cached("rank", { MODEL, EFFORT, system, prompt, departureHour }, 7 * DAY, async () => {
-      const client = new Anthropic({ timeout: 90_000, maxRetries: 2 });
+      const client = inBrowser
+        ? new Anthropic({ apiKey: opts.browserApiKey, dangerouslyAllowBrowser: true, timeout: 90_000, maxRetries: 2 })
+        : new Anthropic({ timeout: 90_000, maxRetries: 2 });
       const response = await client.beta.messages.parse({
         model: MODEL,
         max_tokens: 16000,
@@ -174,7 +194,7 @@ export async function rankStops(input: RankInput): Promise<RankResult> {
   } catch (err) {
     const msg =
       err instanceof Anthropic.AuthenticationError
-        ? "nieprawidłowy ANTHROPIC_API_KEY"
+        ? "nieprawidłowy klucz Claude API"
         : err instanceof Anthropic.RateLimitError
           ? "limit zapytań Claude API"
           : err instanceof Anthropic.APIConnectionError

@@ -2,6 +2,7 @@
  * Test dymny całego pipeline'u bez UI:
  *   npx tsx --conditions=react-server scripts/smoke.mts "Kraków" "Gdańsk"
  */
+import "../src/lib/cache-fs";
 import { findCandidates } from "../src/lib/candidates";
 import { geocode } from "../src/lib/providers/geocode";
 import { getRoute } from "../src/lib/providers/route";
